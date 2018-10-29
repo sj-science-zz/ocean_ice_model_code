@@ -1,0 +1,2 @@
+Stripped official version, with no input-templates based on 
+release-5.1.2
