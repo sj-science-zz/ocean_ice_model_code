@@ -1,13 +1,19 @@
 #include "cppdefs.h"
-#ifdef ICESHELF2D_TOY
-#  define ICESHELF_VBC_HFPROPTOM
-#  undef GAMMAS_Mc1987 
-#  undef GAMMAS_KY1972
-#else
-#  undef ICESHELF_VBC_HFPROPTOM
-#  define GAMMAS_Mc1987 
-#  undef GAMMAS_KY1972
+!#ifdef ICESHELF2D_TOY
+!#  define ICESHELF_VBC_HFPROPTOM
+!#  undef GAMMAS_Mc1987
+!#  undef GAMMAS_KY1972
+!#else
+!#  undef ICESHELF_VBC_HFPROPTOM
+!#  define GAMMAS_Mc1987
+!#  undef GAMMAS_KY1972
+!#endif
+
+#if defined GAMMAS_KY1972 || defined GAMMAS_MCPHEE87 || \
+    defined GAMMAS_MCPHEE87_FULL
+# define GAMMA_DEF
 #endif
+
       MODULE iceshelf_vbc_mod
 #ifdef ICESHELF
 !
@@ -22,29 +28,54 @@
 !                                                                      !
 !  ================================                                    !
 !                                                                      !
-!   Laminar sublayer  Tb, Sb, ustar                                    !                      
+!   Laminar sublayer  Tb, Sb, ustar                                    !
 !                                                                      !
 !  --------------------------------                                    !
 !                                                                      !
 !   Ocean             Tm, Sm, u                                        !
 !                                                                      !
 !                                                                      !
-! References:                                                          ! 
+! References:                                                          !
 !                                                                      !
 ! Hellmer, H. H., and D. Olbers, A two-dimensional model for the       !
 !  thermohaline circulation under an ice shelf, Antarctic Science,     !
-!  1, 325–33, 1989.                                                    ! 
+!  1, 325–33, 1989.                                                    !
 !                                                                      !
 ! Scheduikat, M., and D. J. Olbers, A one-dimensional mixed layer      !
 !  model beneath the Ross Ice Shelf with tidally induced vertical      !
 !  mixing, Antarctic Science, 2(1), 29–42, 1990.                       !
-!                                                                      !  
+!                                                                      !
 ! Holland, D. M., and A. Jenkins, Modeling thermodynamic ice-ocean     !
 !  interactions at the base of an ice shelf, Journal of Physical       !
 !  Oceanography, 29, 1787–1800, 1999.                                  !
 !                                                                      !
 !=======================================================================
 !
+!-----------------------------------------------------------------------
+! Sensitivity test (Malyarenko 9 Apr 2018).
+!
+! Options (stress sensitivity):
+! 1) ICESHELF_CONTROL: quadratic surface stress, Ustar(stress), Ustarmin,
+!                simple McPhee 1987, full HJ99 with heatflux though ice
+! 2) ICESHELF_LOG: log surface stress, Ustar(stress), Ustarmin,
+!                simple McPhee 1987, full HJ99 with heatflux though ice
+! 3) ICESHELF_LIN: linear surface stress, Ustar(stress), Ustarmin,
+!                simple McPhee 1987, full HJ99 with heatflux though ice
+!
+!
+! 4) ICESHELF_STRESS_TURBULENT: McPhee Surface stress, Ustar(stress),
+!                Ustarmin, simple McPhee 1987,
+!                full HJ99 with heatflux though ice
+!		(this is not ready - needs vertical velociy definition)
+!-----------------------------------------------------------------------
+! Options (Thermodynamic balance sensitivity):
+! 1) GAMMAS_Mc1987_full: True McPhee 1987=HJ99.
+!                Assumed here: Lo=10 (stabilizing effect of bouyancy)
+!                kinda assumes melting, but there's no way for it
+!                to be calculated for now
+!                (new variables:  Lo, Rc, XiN,Etastar,nu,Hnu)
+!-----------------------------------------------------------------------
+
       implicit none
 
       PRIVATE
@@ -69,21 +100,21 @@
 !
       integer, intent(in) :: ng, tile
 
-# include "tile.h"
+#include "tile.h"
 !
-# ifdef PROFILE
+#ifdef PROFILE
       CALL wclock_on (ng, iNLM, 6)
-# endif
+#endif
       CALL iceshelf_vbc_tile (ng, tile,                                 &
      &                   LBi, UBi, LBj, UBj,                            &
      &                   IminS, ImaxS, JminS, JmaxS,                    &
      &                   nrhs(ng), nnew(ng),                            &
-#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE || defined LIMIT_ICESTRESS
+#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE
      &                   GRID(ng) % Hz,                                 &
 #endif
-# ifdef MASKING
+#ifdef MASKING
      &                   GRID(ng) % rmask,                              &
-# endif
+#endif
      &                   GRID(ng) % z_r,                                &
      &                   GRID(ng) % z_w,                                &
      &                   GRID(ng) % zice,                               &
@@ -94,27 +125,27 @@
      &                   OCEAN(ng) % u,                                 &
      &                   OCEAN(ng) % v,                                 &
      &                   OCEAN(ng) % t,                                 &
+#ifdef UV_TDRAG
+     &                   OCEAN(ng) % w,                                 &
+#endif
 #ifdef ICESHELF_3EQN_VBC
      &                   ICESHELFVAR(ng) % gammaT,                      &
      &                   ICESHELFVAR(ng) % gammaS,                      &
      &                   ICESHELFVAR(ng) % Tb,                          &
      &                   ICESHELFVAR(ng) % Sb,                          &
 #endif
-#ifdef ICESHELF_RMS_TIDES
-     &                   ICESHELFVAR(ng) % tide_RMSvel,                 &
-#endif
      &                   ICESHELFVAR(ng) % m,                           &
      &                   OCEAN(ng) % rho,                               &
      &                   FORCES(ng) % sustr,                            &
      &                   FORCES(ng) % svstr,                            &
-#   ifdef SHORTWAVE
+#ifdef SHORTWAVE
      &                   FORCES(ng) % srflx,                            &
-#   endif
+#endif
      &                   FORCES(ng) % stflx                             &
      &                   )
-# ifdef PROFILE
+#ifdef PROFILE
       CALL wclock_off (ng, iNLM, 6)
-# endif
+#endif
       RETURN
       END SUBROUTINE iceshelf_vbc
 !
@@ -123,31 +154,31 @@
      &                         LBi, UBi, LBj, UBj,                      &
      &                         IminS, ImaxS, JminS, JmaxS,              &
      &                         nrhs,nnew,                               &
-#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE || defined LIMIT_ICESTRESS
+#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE
      &                         Hz,                                      &
 #endif
-#ifdef MASKING                 
+#ifdef MASKING
      &                         rmask,                                   &
 #endif
      &                         z_r, z_w,                                &
      &                         zice,f,                                  &
-# ifdef ICESHELF_MORPH
+#ifdef ICESHELF_MORPH
      &                         iceshelf_draft,                          &
-# endif
+#endif
      &                         u, v, t,                                 &
+#ifdef UV_TDRAG
+     &                         w,                                       &
+#endif
 #ifdef ICESHELF_3EQN_VBC
      &                         gammaT, gammaS,                          &
      &                         Tb, Sb,                                  &
-#endif      
-#ifdef ICESHELF_RMS_TIDES
-     &                         tide_RMSvel,                             &
 #endif
      &                         m, rho,                                  &
      &                         sustr, svstr,                            &
-#   ifdef SHORTWAVE
+#ifdef SHORTWAVE
      &                         srflx,                                   &
-#   endif
-     &                         stflx)                                   
+#endif
+     &                         stflx)
 !***********************************************************************
 !
       USE mod_param
@@ -157,11 +188,14 @@
 #ifdef ICESHELF_MORPH
       USE mod_iceshelfvar
 #endif
+#ifdef ICESHELF_DYNAM
+      USE mod_iceshelfdyn
+#endif
       USE bc_2d_mod
       USE exchange_2d_mod, ONLY : exchange_r2d_tile
-# ifdef DISTRIBUTE
+#ifdef DISTRIBUTE
       USE mp_exchange_mod, ONLY : mp_exchange2d
-# endif
+#endif
 !
 !  Imported variable declarations.
 !
@@ -169,117 +203,118 @@
       integer, intent(in) :: LBi, UBi, LBj, UBj
       integer, intent(in) :: IminS, ImaxS, JminS, JmaxS
       integer, intent(in) :: nrhs,nnew
-# ifdef ASSUMED_SHAPE
+#ifdef ASSUMED_SHAPE
       real(r8), intent(in) :: u(LBi:,LBj:,:,:)
       real(r8), intent(in) :: v(LBi:,LBj:,:,:)
+# ifdef UV_TDRAG
+      real(r8), intent(in) :: w(LBi:,LBj:,:)
+# endif
       real(r8), intent(out) :: sustr(LBi:,LBj:)
       real(r8), intent(out) :: svstr(LBi:,LBj:)
       real(r8), intent(in) :: rho(LBi:,LBj:,:)
-#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE || defined LIMIT_ICESTRESS
+# if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE
       real(r8), intent(in) :: Hz(LBi:,LBj:,:)
-#endif
-#ifdef MASKING
+# endif
+# ifdef MASKING
       real(r8), intent(in) :: rmask(LBi:,LBj:)
-#endif
+# endif
       real(r8), intent(in) :: z_r(LBi:,LBj:,:)
       real(r8), intent(in) :: z_w(LBi:,LBj:,0:)
       real(r8), intent(in) :: zice(LBi:,LBj:)
       real(r8), intent(in) :: f(LBi:,LBj:)
-#ifdef ICESHELF_MORPH
+# ifdef ICESHELF_MORPH
       real(r8), intent(inout) :: iceshelf_draft(LBi:,LBj:,:)
-#endif
+# endif
       real(r8), intent(in) :: t(LBi:,LBj:,:,:,:)
-#ifdef ICESHELF_3EQN_VBC
+# ifdef ICESHELF_3EQN_VBC
       real(r8), intent(out) :: gammaT(LBi:,LBj:)
       real(r8), intent(out) :: gammaS(LBi:,LBj:)
       real(r8), intent(out) :: Tb(LBi:,LBj:)
       real(r8), intent(out) :: Sb(LBi:,LBj:)
-#endif
-#ifdef ICESHELF_RMS_TIDES
-      real(r8), intent(in) :: tide_RMSvel(LBi:,LBj:)
-#endif
+# endif
       real(r8), intent(out) :: m(LBi:,LBj:)
 # ifdef SHORTWAVE
       real(r8), intent(inout) :: srflx(LBi:,LBj:)
 # endif
       real(r8), intent(inout) :: stflx(LBi:,LBj:,:)
-# else
+#else
       real(r8), intent(in) :: u(LBi:UBi,LBj:UBj,N(ng),2)
       real(r8), intent(in) :: v(LBi:UBi,LBj:UBj,N(ng),2)
+# ifdef UV_TDRAG
+      real(r8), intent(in) :: w(LBi:UBi,LBj:UBj,N(ng))
+# endif
       real(r8), intent(out) :: sustr(LBi:UBi,LBj:UBj)
       real(r8), intent(out) :: svstr(LBi:UBi,LBj:UBj)
       real(r8), intent(in) :: rho(LBi:UBi,LBj:UBj,N(ng))
-#if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE
+# if defined ICESHELF_3EQN_VBC || defined ANA_SEAICE
       real(r8), intent(in) :: Hz(LBi:UBi,LBj:UBj,N(ng))
-#endif
-#ifdef MASKING
+# endif
+# ifdef MASKING
       real(r8), intent(in) :: rmask(LBi:UBi,LBj:UBj)
-#endif
+# endif
       real(r8), intent(in) :: z_r(LBi:UBi,LBj:UBj,N(ng))
       real(r8), intent(in) :: z_w(LBi:UBi,LBj:UBj,0:N(ng))
       real(r8), intent(in) :: zice(LBi:UBi,LBj:UBj)
       real(r8), intent(in) :: f(LBi:UBi,LBj:UBj)
-#ifdef ICESHELF_MORPH
+# ifdef ICESHELF_MORPH
       real(r8), intent(in) :: iceshelf_draft(LBi:UBi,LBj:UBj,2)
-#endif
+# endif
       real(r8), intent(in) :: t(LBi:UBi,LBj:UBj,N(ng),3,NT(ng))
-#ifdef ICESHELF_3EQN_VBC
+# ifdef ICESHELF_3EQN_VBC
       real(r8), intent(out) :: gammaT(LBi:UBi,LBj:UBj)
       real(r8), intent(out) :: gammaS(LBi:UBi,LBj:UBj)
       real(r8), intent(out) :: Tb(LBi:UBi,LBj:UBj)
       real(r8), intent(out) :: Sb(LBi:UBi,LBj:UBj)
-#endif
-#ifdef ICESHELF_RMS_TIDES
-      real(r8), intent(in) :: tide_RMSvel(LBi:UBi,LBj:UBj)
-#endif
+# endif
       real(r8), intent(out) :: m(LBi:UBi,LBj:UBj)
 # ifdef SHORTWAVE
       real(r8), intent(inout) :: srflx(LBi:UBi,LBj:UBj)
 # endif
       real(r8), intent(inout) :: stflx(LBi:UBi,LBj:UBj,NT(ng))
-# endif
+#endif
 !
 !  Local variable declarations.
 !
 !      integer :: IstrR, IENDR, JstrR, JendR, IstrU, JstrV
       integer :: i, j, itrc
       real(r8) :: Pradj,Scadj, Cdrt, cp_i
-!      real(r8) :: a,b,c,Pr,Sc,Cd,small
+      real(r8) :: Cd_loc, Etastar, nu, Hnu, XiN
+!      real(r8) :: a,b,c,Pr,Sc,Cd_loc,small
 !      real(r8) :: cp_w,ustar,visc,turb,TFb,rho_i
       real(r8) :: Sm,Tm,rhoi_on_rho0,ustar,TFb,turb
-#ifdef ICESHELF_VBC_HFPROPTOM
+#if defined UV_DRAG || defined USTR_DRAG_G15 || defined USTR_DRAG_HJ99      
+      real(r8), dimension(IminS:ImaxS,JminS:JmaxS) :: Velocity
+#endif      
+#if defined ICESHELF_VBC_HFPROPTOM || defined ICESHELF_HJ99_HO89 || \
+    defined ICESHELF_HJ99 || defined ICESHELF_ROBIN
       real(r8) :: Ex1,Ex2,Ex3,Ex4,Ex5,Ex6,Ep1,Ep2,Ep3,Ep31,Ep4,Ep5
       real(r8) :: Sr1,Sr2,Sf1,Sf2,Tf1,Tf2,rho_r
 #else
-      real(r8) :: mflag,TFi,cff3 
+      real(r8) :: mflag,TFi,cff3
+#endif
+#if defined ICESHELF_Grosfeld1997
+      real(r8) :: QT, QS
+#endif
+#ifdef ICESHELF_KM2015
+      real(r8) :: Cs, mu, D, Kappa, Cf, Tf, Tl, Td
+      real(r8) :: Ci, Ti, rhoi, rhof, BRACKET,V,onethird
 #endif
       real(r8) :: cff1, cff2
-#ifdef LIMIT_ICESTRESS
-      real(r8) :: cff
-#endif
 #ifdef ICESHELF_TEOS10
       real(r8) :: ct
 #endif
-#  if (!defined BBL_MODEL) && defined UV_LOGDRAG
-      real(r8), dimension(PRIVATE_2D_SCRATCH_ARRAY) :: wrk
-#  endif
-#  include "set_bounds.h"
+#if (!defined BBL_MODEL) && defined UV_LOGDRAG
+!      real(r8), dimension(PRIVATE_2D_SCRATCH_ARRAY) :: wrk
+      real(r8), dimension(IminS:ImaxS,JminS:JmaxS) :: wrk
+#endif
+#include "set_bounds.h"
 !
 !-----------------------------------------------------------------------
 !  If ice shelf cavities, replace surface wind stress with ice shelf
 !  cavity stress (m2/s2).
 !-----------------------------------------------------------------------
 
-#   ifdef LIMIT_ICESTRESS
-!
-!  Set limiting factor for ice shelf basal. The stress is adjusted
-!  to not change the direction of momentum.  It only should slow down
-!  to zero.  The value of 0.75 is arbitrary limitation assignment.
-!
-      cff=0.75_r8/dt(ng)
-#   endif
-
-#   if defined UV_LOGDRAG
+#if defined UV_LOGDRAG
 !
 !  Set logarithmic ice shelf cavity stress.
 !
@@ -300,12 +335,6 @@
             cff2=SQRT(u(i,j,N(ng),nrhs)*u(i,j,N(ng),nrhs)+cff1*cff1)
             sustr(i,j)=-0.5_r8*(wrk(i-1,j)+wrk(i,j))*                   &
      &                 u(i,j,N(ng),nrhs)*cff2
-#    ifdef LIMIT_ICESTRESS
-          cff3=cff*0.5_r8*(Hz(i-1,j,N(ng))+Hz(i,j,N(ng)))
-          sustr(i,j)=SIGN(1.0_r8, sustr(i,j))*                          &
-     &               MIN(ABS(sustr(i,j)),                               &
-     &                   ABS(u(i,j,N(ng),nrhs))*cff3)
-#    endif
           END IF
         END DO
       END DO
@@ -319,16 +348,10 @@
             cff2=SQRT(cff1*cff1+v(i,j,N(ng),nrhs)*v(i,j,N(ng),nrhs))
             svstr(i,j)=-0.5_r8*(wrk(i,j-1)+wrk(i,j))*                   &
      &                 v(i,j,N(ng),nrhs)*cff2
-#    ifdef LIMIT_ICESTRESS
-          cff3=cff*0.5_r8*(Hz(i,j-1,N(ng))+Hz(i,j,N(ng)))
-          svstr(i,j)=SIGN(1.0_r8, svstr(i,j))*                          &
-     &               MIN(ABS(svstr(i,j)),                               &
-     &                   ABS(v(i,j,N(ng),nrhs))*cff3)
-#    endif
           END IF
         END DO
       END DO
-#   elif defined UV_QDRAG
+#elif defined UV_QDRAG
 !
 !  Set quadratic ice shelf cavity stress.
 !
@@ -341,12 +364,6 @@
      &                    v(i-1,j+1,N(ng),nrhs))
             cff2=SQRT(u(i,j,N(ng),nrhs)*u(i,j,N(ng),nrhs)+cff1*cff1)
             sustr(i,j)=-rdrg2(ng)*u(i,j,N(ng),nrhs)*cff2
-#    ifdef LIMIT_ICESTRESS
-          cff3=cff*0.5_r8*(Hz(i-1,j,N(ng))+Hz(i,j,N(ng)))
-          sustr(i,j)=SIGN(1.0_r8, sustr(i,j))*                          &
-     &               MIN(ABS(sustr(i,j)),                               &
-     &                   ABS(u(i,j,N(ng),nrhs))*cff3)
-#    endif
           END IF
         END DO
       END DO
@@ -359,16 +376,10 @@
      &                    u(i+1,j-1,N(ng),nrhs))
             cff2=SQRT(cff1*cff1+v(i,j,N(ng),nrhs)*v(i,j,N(ng),nrhs))
             svstr(i,j)=-rdrg2(ng)*v(i,j,N(ng),nrhs)*cff2
-#    ifdef LIMIT_ICESTRESS
-          cff3=cff*0.5_r8*(Hz(i,j-1,N(ng))+Hz(i,j,N(ng)))
-          svstr(i,j)=SIGN(1.0_r8, svstr(i,j))*                          &
-     &               MIN(ABS(svstr(i,j)),                               &
-     &                   ABS(v(i,j,N(ng),nrhs))*cff3)
-#    endif
           END IF
         END DO
       END DO
-#   elif defined UV_LDRAG
+#elif defined UV_LDRAG
 !
 !  Set linear ice shelf cavity stress.
 !
@@ -376,12 +387,6 @@
         DO i=IstrU,IEND
           IF (zice(i,j)*zice(i-1,j).ne.0.0_r8) THEN
             sustr(i,j)=-rdrg(ng)*u(i,j,N(ng),nrhs)
-#    ifdef LIMIT_ICESTRESS
-          cff1=cff*0.5_r8*(Hz(i-1,j,N(ng))+Hz(i,j,N(ng)))
-          sustr(i,j)=SIGN(1.0_r8, sustr(i,j))*                          &
-     &               MIN(ABS(sustr(i,j)),                               &
-     &                   ABS(u(i,j,N(ng),nrhs))*cff1)
-#    endif
           END IF
         END DO
       END DO
@@ -389,16 +394,90 @@
         DO i=Istr,IEND
           IF (zice(i,j)*zice(i,j-1).ne.0.0_r8) THEN
             svstr(i,j)=-rdrg(ng)*v(i,j,N(ng),nrhs)
-#    ifdef LIMIT_ICESTRESS
-          cff1=cff*0.5_r8*(Hz(i,j-1,N(ng))+Hz(i,j,N(ng)))
-          svstr(i,j)=SIGN(1.0_r8, svstr(i,j))*                          &
-     &               MIN(ABS(svstr(i,j)),                               &
-     &                   ABS(v(i,j,N(ng),nrhs))*cff1)
-#    endif
           END IF
         END DO
       END DO
-#   else
+
+
+#elif defined UV_TDRAG
+!
+!  Alena Malyarenko, April 2018
+!====================================================================
+!  Set turbulent ice shelf cavity stress (McPhee def)
+!  (needs more work)
+      DO j=Jstr,JEND
+        DO i=IstrU,IEND
+          IF (zice(i,j)*zice(i-1,j).ne.0.0_r8) THEN
+            !u mean over 9 points
+            cff1=1_r8/9_r8*(u(i+1,j+1 ,N(ng),nrhs)+                  &
+     &                      u(i  ,j+1 ,N(ng),nrhs)+                  &
+     &                      u(i-1,j+1 ,N(ng),nrhs)+                  &
+     &                      u(i+1,j   ,N(ng),nrhs)+                  &
+     &                      u(i  ,j   ,N(ng),nrhs)+                  &
+     &                      u(i-1,j   ,N(ng),nrhs)+                  &
+     &                      u(i+1,j-1 ,N(ng),nrhs)+                  &
+     &                      u(i  ,j-1 ,N(ng),nrhs)+                  &
+     &                      u(i-1,j-1 ,N(ng),nrhs))
+            !w mean over 9 points
+            cff2=1_r8/9_r8*(w(i+1,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i  ,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i-1,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i+1,j   ,N(ng),nrhs)+                  &
+     &                      w(i  ,j   ,N(ng),nrhs)+                  &
+     &                      w(i-1,j   ,N(ng),nrhs)+                  &
+     &                      w(i+1,j-1 ,N(ng),nrhs)+                  &
+     &                      w(i  ,j-1 ,N(ng),nrhs)+                  &
+     &                      w(i-1,j-1 ,N(ng),nrhs))
+
+            sustr(i,j)=-(u(i,j,N(ng),nrhs)-cff1) * (w(i,j,N(ng),nrhs)-cff2 )
+          END IF
+        END DO
+      END DO
+      DO j=JstrV,JEND
+        DO i=Istr,IEND
+          IF (zice(i,j)*zice(i,j-1).ne.0.0_r8) THEN
+          !v mean over 9 points
+            cff1=1_r8/9_r8*(v(i+1,j+1 ,N(ng),nrhs)+                  &
+     &                      v(i  ,j+1 ,N(ng),nrhs)+                  &
+     &                      v(i-1,j+1 ,N(ng),nrhs)+                  &
+     &                      v(i+1,j   ,N(ng),nrhs)+                  &
+     &                      v(i  ,j   ,N(ng),nrhs)+                  &
+     &                      v(i-1,j   ,N(ng),nrhs)+                  &
+     &                      v(i+1,j-1 ,N(ng),nrhs)+                  &
+     &                      v(i  ,j-1 ,N(ng),nrhs)+                  &
+     &                      v(i-1,j-1 ,N(ng),nrhs))
+            !w mean over 9 points
+            cff2=1_r8/9_r8*(w(i+1,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i  ,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i-1,j+1 ,N(ng),nrhs)+                  &
+     &                      w(i+1,j   ,N(ng),nrhs)+                  &
+     &                      w(i  ,j   ,N(ng),nrhs)+                  &
+     &                      w(i-1,j   ,N(ng),nrhs)+                  &
+     &                      w(i+1,j-1 ,N(ng),nrhs)+                  &
+     &                      w(i  ,j-1 ,N(ng),nrhs)+                  &
+     &                      w(i-1,j-1 ,N(ng),nrhs))
+            svstr(i,j)=-(v(i,j,N(ng),nrhs)-cff1) * (w(i,j,N(ng),nrhs)-cff2 )
+          END IF
+        END DO
+      END DO
+
+#elif defined UV_DRAG
+!
+!  Alena Malyarenko, August 2018
+!====================================================================
+! Calculate Velocity= sqrt ( u*u + v*v)  for this point
+! Correct counters??
+!
+      DO j=Jstr,JEND
+        DO i=Istr,IEND
+           Velocity(i,j)=sqrt( 0.25_r8*(u(i-1,j,N(ng),nrhs)+u(i,j,N(ng),nrhs))* &
+                                       (u(i-1,j,N(ng),nrhs)+u(i,j,N(ng),nrhs))+ &
+                               0.25_r8*(v(i,j-1,N(ng),nrhs)+v(i,j,N(ng),nrhs))* &
+                                       (v(i-1,j-1,N(ng),nrhs)+v(i,j,N(ng),nrhs))   )
+        END DO
+      END DO
+!
+#else
       DO j=Jstr,JEND
         DO i=IstrU,IEND
           IF (zice(i,j)*zice(i-1,j).ne.0.0_r8) THEN
@@ -413,7 +492,9 @@
           END IF
         END DO
       END DO
-#   endif
+
+
+#endif
 !
 !  Apply boundary conditions.
 !
@@ -434,8 +515,8 @@
 !  over the ice.
 !-----------------------------------------------------------------------
 !
-#    ifdef ANA_SEAICE
-#     ifdef SEAICE_CLIMA
+#ifdef ANA_SEAICE
+# ifdef SEAICE_CLIMA
 ! Analytical sea-ice forcing in the open water areas
       tyear = MOD(tdays(ng)-DSTART,365.25_r8)
       IF (tyear.le.59.0_r8) THEN
@@ -451,112 +532,378 @@
         sfcTemp = Tmax
         sfcSalt = saltMin
       endif
-#     elif defined SEAICE_WINTER
+# elif defined SEAICE_WINTER
         sfcTemp = Tmin
         sfcSalt = SaltMax
-#     endif
-#    endif
+# endif
+#endif
 
-#    ifdef ICESHELF_3EQN_VBC
+#ifdef GAMMA_DEF
       Pradj = 12.5_r8*(Pr**(2.0_r8/3.0_r8))
       Scadj = 12.5_r8*(Sc**(2.0_r8/3.0_r8))
-      Cdrt =  sqrt(Cd)
+      Cdrt =  sqrt(Cd_loc)
       cp_i =  152.5_r8+7.122_r8*(273.15_r8+Ti)
       rhoi_on_rho0 = rho_i/rho0
-#   endif
+#endif
 
+#if defined ICESHELF_KM2015
+! define a few constants
+
+        Cs=0_r8
+        g=9.80655_r8
+        mu=1906_r8
+        D=6.8159e-07_r8
+        Kappa=0.57_r8/(1027_r8*4000_r8)
+        onethird = 1_r8/3_r8
+#endif
       DO j=Jstr,JEND
         DO i=Istr,IEND
-# ifdef SALINITY
+#ifdef SALINITY
           Sm=MAX(0.0_r8,t(i,j,N(ng),nrhs,isalt))
 !          write(6,*)
-# else
+#else
           Sm=0.0_r8
-# endif
+#endif
           IF (zice(i,j).ne.0.0_r8) THEN
-#if defined ICESHELF_2EQN_VBC
-          TFb = a*Sm+b+c*zice(i,j)
-# ifdef ICESHELF_TEOS10
+#ifdef ICESHELF_TEOS10
           ct = ct_from_theta(Sm,t(i,j,N(ng),nrhs,itemp))
           Tm = t_from_ct(Sm,ct,-zice(i,j))
-# else
-         CALL potit(Sm,t(i,j,N(ng),nrhs,itemp),-zice(i,j),0.0_r8,Tm,i,j)
-# endif
-            stflx(i,j,itemp)=gamma*(TFb-Tm)
-            stflx(i,j,isalt)=Cp*stflx(i,j,itemp)*refSalt/L
-            m(i,j) = stflx(i,j,isalt)/Sm
-
-#elif defined ICESHELF_3EQN_VBC
-! Get the insitu salinity and temperature
-# ifdef ICESHELF_TEOS10
-          ct = ct_from_theta(Sm,t(i,j,N(ng),nrhs,itemp))
-          Tm = t_from_ct(Sm,ct,-zice(i,j))
-# else
-         CALL potit(Sm,t(i,j,N(ng),nrhs,itemp),-zice(i,j),0.0_r8,Tm,i,j)
-# endif
-
-!     Calculate exchange coefficients. Note that this assumes log profile 
-# ifdef ICESHELF_RMS_TIDES
-!     Include RMS tidal velocity
-#  ifdef UV_LOGDRAG
-            ustar = SQRT(wrk(i,j)*tide_RMSvel(i,j)**2 +                 &
-     &                   SQRT((0.5_r8*(sustr(i,j)+sustr(i+1,j)))**2+    &
-     &                        (0.5_r8*(svstr(i,j)+svstr(i,j+1)))**2))
-#  elif defined UV_QDRAG
-            ustar = SQRT(rdrg2(ng)*tide_RMSvel(i,j)**2 +                &
-     &                   SQRT((0.5_r8*(sustr(i,j)+sustr(i+1,j)))**2+    &
-     &                        (0.5_r8*(svstr(i,j)+svstr(i,j+1)))**2))
-#  elif defined UV_LDRAG
-            ustar = SQRT(rdrg(ng)*tide_RMSvel(i,j)**2 +                 &
-     &                   SQRT((0.5_r8*(sustr(i,j)+sustr(i+1,j)))**2+    &
-     &                        (0.5_r8*(svstr(i,j)+svstr(i,j+1)))**2))
-#  else
-!    Implied drag coefficient of zero
+#else
+          CALL potit(Sm,t(i,j,N(ng),nrhs,itemp),-zice(i,j),0.0_r8,Tm,i,j)
+#endif
+!-----------------------------------------------------------------------
+!
+!    Calculate exchange coefficients. Part 1.
+!     Friction Velocity
+!-----------------------------------------------------------------------
+!
+! Alena Malyarenko, August 2018
+! USTR_DRAG_G15 <- Gwyther 2015
+! USTR_TUR      <- McPhee
+! else          <- original default version with ISOMIP ROMS
+!====================================================================
+#if defined USTR_TUR
+            ustar = SQRT(SQRT(((sustr(i,j)+sustr(i+1,j)))**2+    &
+     &                        ((svstr(i,j)+svstr(i,j+1)))**2))
+#elif defined USTR_DRAG_HJ99
+            Cd_loc=0.0015_r8
+            ustar =SQRT(Cd_loc)*ABS(Velocity(i,j))
+#elif defined USTR_DRAG_G15
+            Cd_loc=0.003_r8
+            ustar =SQRT(Cd_loc)*ABS(Velocity(i,j))
+#else
             ustar = SQRT(SQRT((0.5_r8*(sustr(i,j)+sustr(i+1,j)))**2+    &
      &                        (0.5_r8*(svstr(i,j)+svstr(i,j+1)))**2))
-#  endif
-# else
-            ustar = SQRT(SQRT((0.5_r8*(sustr(i,j)+sustr(i+1,j)))**2+    &
-     &                        (0.5_r8*(svstr(i,j)+svstr(i,j+1)))**2))
-# endif
-#    ifdef MASKING
+#endif
+!
+#ifdef MASKING
             ustar = ustar*rmask(i,j)
-#    endif
+#endif
            if(ustar.lt.small) ustar = small
-#    ifdef GAMMAS_KY1972
+!
+!-----------------------------------------------------------------------
+!
+!    Calculate exchange coefficients. Part 2.
+!     Variable Gamma+ Velocity-dependent
+!----------------------------------------------------------------------
+!  Alena Malyarenko, April 2018
+!  GAMMAS_KY1972    <- came with the ISOMIP code
+!  GAMMAS_MCPHEE87  <- simplified version of McPhee 1987
+!  GAMMAS_MCPHEE87_FULL <- more sophisticated version needs more work
+!====================================================================
+! This is a strangely coded verson of KY1972, coded from HJ99 and J1991. (O.O)
+#ifdef GAMMAS_KY1972
             turb = 2.12_r8*LOG((ustar*Hz(i,j,N(ng)))/visc)
             gammaT(i,j) = ustar/(turb + Pradj - 9.0_r8)
             gammaS(i,j) = ustar/(turb + Scadj - 9.0_r8)
-#    elif defined GAMMAS_Mc1987
+!
+#elif defined GAMMAS_MCPHEE87
 ! Uses simplified version of McPhee 1987
             IF (ustar.gt.small.and.ABS(f(i,j)).gt.1.0E-8) THEN
-          turb = 2.5_r8*LOG(5300.0_r8*ustar*ustar/ABS(f(i,j))) + 7.12_r8  
+          turb = 2.5_r8*LOG(5300.0_r8*ustar*ustar/ABS(f(i,j))) + 7.12_r8
             ELSE
               turb = 0.0_r8
             END IF
 
             gammaT(i,j) = ustar/(turb + Pradj - 6.0_r8)
             gammaS(i,j) = ustar/(turb + Scadj - 6.0_r8)
-#    else
+!
+!  Alena Malyarenko, April 2018
+!  why does coriolis matter, divide by zero!
+!====================================================================
+#elif defined GAMMAS_MCPHEE87_FULL
+            IF (ustar.gt.small.and.ABS(f(i,j)).gt.1.0E-8) THEN
+              !Lo=10_r8
+              !Rc=0.2_r8
+              XiN=0.052_r8
+              !Etastar=1_r8/(sqrt(1_r8+XiN*ustar/(abs(f(i,j))*Lo*Rc)))
+              Etastar=1
+              nu=1.95_r8/1000000_r8
+              Hnu=5_r8*nu/ustar
+              turb = 2.5_r8*LOG(ustar*XiN*Etastar*Etastar/(abs(f(i,j))*Hnu))&
+                    + 0.5_r8/(XiN*Etastar) - 2.5_r8
+            ELSE
+              turb = 0.0_r8
+            END IF
+            gammaT(i,j) = ustar/(turb + Pradj - 6.0_r8)
+            gammaS(i,j) = ustar/(turb + Scadj - 6.0_r8)
+!-----------------------------------------------------------------------
+! Calculate exchange coefficients. Part 2.
+! CONSTANT GAMMAS + Velocity-independent
+!
+!-----------------------------------------------------------------------
+!  Alena Malyarenko, August 2018
+!====================================================================
+#elif defined GAMMAS_HO89
+            gammaT(i,j)=0.0001_r8
+            gammaS(i,j)=0.000000505_r8
+#elif defined GAMMAS_KM2015
+            gammaT(i,j)= 0.092_r8
+#elif defined GAMMAS_Grosfeld97
+            gammaT(i,j)= 0.0001_r8
+!# else
+!            gammaT(i,j) = 1.00e-4_r8
+!            gammaS(i,j) = 5.05e-7_r8
+!# endif
+!
+!-----------------------------------------------------------------------
+!
+!    Calculate exchange coefficients. Part 2.
+!     Constant Gamma+ Velocity-dependent
+!   GAMMAS_KIMURA2016 -> Kimura 2016, diffusion dominated transport
+!-----------------------------------------------------------------------
+#elif defined GAMMAS_MCPHEE_2015
+            gammaT(i,j)=0.0093_r8*ustar
+# ifdef GAMMAS_DD_30
+            gammaS(i,j)= gammaT(i,j)/30._r8
+# elif defined GAMMAS_DD_50
+            gammaS(i,j)= gammaT(i,j)/50._r8
+# elif defined GAMMAS_DD_90
+            gammaS(i,j)= gammaT(i,j)/90._r8
+# else
+            gammaS(i,j)= gammaT(i,j)/35._r8
+# endif
+!# endif
+!
+#elif defined GAMMAS_KIMURA2016
+            gammaT(i,j)=0.016_r8*ustar
+            gammaS(i,j)=0.00044_r8*ustar
+#else
             gammaT(i,j) = 1.00e-4_r8
             gammaS(i,j) = 5.05e-7_r8
-#    endif
+#endif
 
-# ifdef ICESHELF_VBC_HFPROPTOM
+#if defined ICESHELF_2EQN_VBC
+          TFb = a*Sm+b+c*zice(i,j)
+            stflx(i,j,itemp)=gamma*(TFb-Tm)
+            stflx(i,j,isalt)=Cp*stflx(i,j,itemp)*refSalt/L
+            m(i,j) = stflx(i,j,isalt)/Sm
+!
+!-----------------------------------------------------------------------
+!
+! BALANCE FORMULATION
+!
+!-----------------------------------------------------------------------
+!
+!  Alena Malyarenko, May 2018
+!  HJ99 balance aka HO89 (heatflux through solid always)
+!====================================================================
+#elif defined ICESHELF_HJ99_HO89
+          rho_r= rho_i/(1000.0_r8+rho(i,j,N(ng)))
+          Ep1  = cp_w*gammaT(i,j)
+          Ep2  = cp_i*gammaS(i,j)
+          Ep3  = L*gammaS(i,j)
+          Ep31 = -rho_r*cp_i*dt_i/zice(i,j)
+          Ep4  = b+c*z_w(i,j,N(ng))
+          Ep5  = gammaS(i,j)/rho_r
+!
+            Ex1 = a*(Ep1+Ep31)
+            Ex2 = Ep1*(Tm-Ep4)+Ep3+Ep31*(Ti-Ep4)
+            Ex3 = Ep3*Sm
+            Ex6 = 0.5_r8
+!
+          Ex4 = Ex2/Ex1
+          Ex5 = Ex3/Ex1
+          Sr1 = 0.25_r8*Ex4*Ex4-Ex5
+          Sr2 = Ex6*Ex4
+          Sf1 = Sr2+sqrt(Sr1)
+          Tf1 = a*Sf1+Ep4
+          Sf2 = Sr2-sqrt(Sr1)
+          Tf2 = a*Sf2+Ep4
+!
+! Salinities < 0 psu are NOT defined, i.e....
+         IF (Sf1.gt.0.) THEN
+           Tb(i,j) = Tf1
+           Sb(i,j) = Sf1
+         ELSE
+           Tb(i,j) = Tf2
+           Sb(i,j) = Sf2
+         endif
+!
+         m(i,j) = -Ep5*(1.0-Sm/Sb(i,j))
+!
+! Calculates fluxes:
+         stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
+         stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
 
+!  Alena Malyarenko, August 2018
+!  True HJ99 balance (dual from freezing and melting)
+!====================================================================
+#elif defined ICESHELF_HJ99
+          rho_r= rho_i/(1000.0_r8+rho(i,j,N(ng)))
+          Ep1  = cp_w*gammaT(i,j)
+          Ep2  = cp_i*gammaS(i,j)
+          Ep3  = L*gammaS(i,j)
+          Ep4  = b+c*z_w(i,j,N(ng))
+          Ep5  = gammaS(i,j)/rho_r
+          TFb = a*Sm+Ep4
+          IF (Tm.lt.TFb) THEN
+! Freezing - no heat flux through solid
+            Ep31 = 0.0_r8
+            Ex1 = a*(Ep1+Ep31)
+            Ex2 = Ep1*(Tm-Ep4)+Ep3+Ep31*(Ti-Ep4)
+            Ex3 = Ep3*Sm
+            Ex6 = 0.5_r8
+          ELSE
+! Melting - heat flux through solid
+            Ex1 = a*(Ep1-Ep2)
+            Ex2 = Ep1*(Ep4-Tm)+Ep2*(Ti+a*Sm-Ep4)-Ep3
+            Ex3 = Sm*(Ep2*(Ep4-Ti)+Ep3)
+            Ex6 = -0.5_r8
+          endif
+          Ex4 = Ex2/Ex1
+          Ex5 = Ex3/Ex1
+          Sr1 = 0.25_r8*Ex4*Ex4-Ex5
+          Sr2 = Ex6*Ex4
+          Sf1 = Sr2+sqrt(Sr1)
+          Tf1 = a*Sf1+Ep4
+          Sf2 = Sr2-sqrt(Sr1)
+          Tf2 = a*Sf2+Ep4
+!
+! Salinities < 0 psu are NOT defined, i.e....
+         IF (Sf1.gt.0.) THEN
+           Tb(i,j) = Tf1
+           Sb(i,j) = Sf1
+         ELSE
+           Tb(i,j) = Tf2
+           Sb(i,j) = Sf2
+         endif
+!
+         m(i,j) = -Ep5*(1.0-Sm/Sb(i,j))
+!
+! Calculates fluxes:
+!         stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
+!         stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
+
+! Calculates fluxes:
+         stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
+         stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
+
+!  Alena Malyarenko, August 2018
+!  Robin
+!====================================================================
+#elif defined ICESHELF_ROBIN
+          rho_r= rho_i/(1000.0_r8+rho(i,j,N(ng)))
+          Ep1  = cp_w*gammaT(i,j)
+          Ep2  = cp_i*gammaS(i,j)
+          Ep3  = L*gammaS(i,j)
+          Ep4  = b+c*z_w(i,j,N(ng))
+          Ep5  = gammaS(i,j)/rho_r
+          TFb = a*Sm+Ep4
+!
+            Ex1 = a*(Ep1-Ep2)
+            Ex2 = Ep1*(Ep4-Tm)+Ep2*(Ti+a*Sm-Ep4)-Ep3
+            Ex3 = Sm*(Ep2*(Ep4-Ti)+Ep3)
+            Ex6 = -0.5_r8
+!
+          Ex4 = Ex2/Ex1
+          Ex5 = Ex3/Ex1
+          Sr1 = 0.25_r8*Ex4*Ex4-Ex5
+          Sr2 = Ex6*Ex4
+          Sf1 = Sr2+sqrt(Sr1)
+          Tf1 = a*Sf1+Ep4
+          Sf2 = Sr2-sqrt(Sr1)
+          Tf2 = a*Sf2+Ep4
+!
+! Salinities < 0 psu are NOT defined, i.e....
+         IF (Sf1.gt.0.) THEN
+           Tb(i,j) = Tf1
+           Sb(i,j) = Sf1
+         ELSE
+           Tb(i,j) = Tf2
+           Sb(i,j) = Sf2
+         endif
+!
+         m(i,j) = -Ep5*(1.0-Sm/Sb(i,j))
+!
+! Calculates fluxes:
+         stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
+         stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
+
+!  Alena Malyarenko, August 2018
+!  Grosfeld 1997; ice shelf based on Determann Gerdes 1994; details in Willams99 Thesis.
+!zice in m?
+!not sure what fluxes are
+!====================================================================
+#elif defined ICESHELF_Grosfeld1997
+        a=9.4e-02_r8
+        b=7.53e-08_r8
+        c=5.7e-02_r8
+
+        Tice= a - b*(1e+05+zice(i,j)*1e+04) -c*Sm;
+
+        QT=1028_r8*3950_r8*1e-04*(Tice-Tm)
+
+        m(i,j)=QT/(1028_r8*3.34_r8*1e+05)
+
+        QS=-915_r8*m(i,j)*35_r8
+
+        stflx(i,j,itemp)=QT
+        stflx(i,j,isalt)=QS
+
+! Fluxes are like Jenkins 2001 formula 25
+
+!  Alena Malyarenko, August 2018
+!  Kerr McConnochie 2015
+! NEEDS TO BE CONVERTED FROM MATLAB
+!====================================================================
+#elif defined ICESHELF_KM2015
+
+        Cf=Sm
+        Tf=Tm
+
+        Tl= sw_fp(Cf,z_w(i,j,N(ng)))
+        Td= Tf -  Tl
+
+        Ci= Cf-4.46_r8*Td +0.0096_r8*Td*Td
+        Ti= Tl+0.251_r8*Td-0.0013_r8*Td*Td
+! to be coded        rhoi=sw_dens(Ci,Ti,0) consistent with ROMS density whatever that is
+! to be coded:        rhof = rho(Sm, Tm)
+        BRACKET=g*(rhof(i)-rhoi(i))*D*D / (mu)
+
+        V= gamma*power(abs(BRACKET)**onethird)*(Cf-Ci(i))/(Cf-Cs)
+!
+         m(i,j) = V
+         Tb(i,j)=Ti
+         Sb(i,j)=Ci
+!
+! Calculates fluxes:
+         stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
+         stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
+
+
+#elif defined ICESHELF_VBC_HFPROPTOM
 ! Calculates density RHOW in the boundary layer, interface
-! pressure PG[dbar], and solving a quadratic equation for the 
+! pressure PG[dbar], and solving a quadratic equation for the
 ! interface salinity (SB) to determine the melTemp_insitug/freezingrate
 ! (seta).
           rho_r= rho_i/(1000.0_r8+rho(i,j,N(ng)))
           Ep1  = cp_w*gammaT(i,j)
           Ep2  = cp_i*gammaS(i,j)
           Ep3  = L*gammaS(i,j)
-#ifdef ICESHELF2D_TOY
-          Ep31 = 0.0_r8
-#else
+!
           Ep31 = -rho_r*cp_i*dt_i/zice(i,j)
-#endif
+!
           Ep4  = b+c*z_w(i,j,N(ng))
           Ep5  = gammaS(i,j)/rho_r
 !
@@ -566,13 +913,13 @@
             Ex1 = a*(Ep1+Ep31)
             Ex2 = Ep1*(Tm-Ep4)+Ep3+Ep31*(Ti-Ep4)
             Ex3 = Ep3*Sm
-            Ex6 = 0.5
+            Ex6 = 0.5_r8
           ELSE
 ! negative heat flux term in the ice (due to -kappa/D)
             Ex1 = a*(Ep1-Ep2)
             Ex2 = Ep1*(Ep4-Tm)+Ep2*(Ti+a*Sm-Ep4)-Ep3
             Ex3 = Sm*(Ep2*(Ep4-Ti)+Ep3)
-            Ex6 = -0.5
+            Ex6 = -0.5_r8
           endif
           Ex4 = Ex2/Ex1
           Ex5 = Ex3/Ex1
@@ -599,7 +946,10 @@
          stflx(i,j,itemp)=(gammaT(i,j)-rho_r*m(i,j))*(Tb(i,j)-Tm)
          stflx(i,j,isalt)=(gammaS(i,j)-rho_r*m(i,j))*(Sb(i,j)-Sm)
 
-# else
+
+
+#elif defined ICESHELF_GWYTHER2015
+!Gwyther 2015 code
             TFb = a*Sm + b + c*zice(i,j)
             mflag= 0.5*(1 + SIGN(1.0_r8,Tm-TFb))
             TFi = (1 - mflag)*a*Si + b + c*zice(i,j)
@@ -613,38 +963,41 @@
 ! Calculate melt rate:
            m(i,j) = -(cff2 - SQRT(cff2*cff2 - 4*cff1*cff3))/(2*cff1)
 
-
 ! Calculate basal temperature and salinity:
            Tb(i,j) = (gammaT(i,j)*Tm+mflag*(cp_i/cp_w)*m(i,j)*Ti        &
      &             - (L/cp_w)*m(i,j))                                   &
      &             /(gammaT(i,j) + mflag*(cp_i/cp_w)*m(i,j))
            Sb(i,j) = (Tb(i,j) - b - c*zice(i,j))/a
 
-         stflx(i,j,itemp)=(gammaT(i,j)+rhoi_on_rho0*m(i,j))*(Tb(i,j)-Tm)  
+         stflx(i,j,itemp)=(gammaT(i,j)+rhoi_on_rho0*m(i,j))*(Tb(i,j)-Tm)
          stflx(i,j,isalt)=(gammaS(i,j)+rhoi_on_rho0*m(i,j))*(Sb(i,j)-Sm)
 !           write(6,*) gammaT,gammaS,Tb,Sb,Tm,Sm,rhoi_on_rho0
-           
-# endif
-
 #else
+!    No 3EQN balance algorithm defined
       DO itrc=1,NT(ng)
               stflx(i,j,itrc)=0.0_r8
       END DO
 #endif
+
+!#else
+!      DO itrc=1,NT(ng)
+!              stflx(i,j,itrc)=0.0_r8
+!      END DO
+!#endif
           ELSE
             m(i,j) = 0.0_r8
-# if defined ANA_SEAICE
+#if defined ANA_SEAICE
             stflx(i,j,itemp)=Hz(i,j,N(ng))*                             &
                              (sfcTemp-t(i,j,N(ng),nrhs,itemp))/trelax
             stflx(i,j,isalt)=Hz(i,j,N(ng))*                             &
                              (sfcSalt-t(i,j,N(ng),nrhs,isalt))/trelax
-# else
-#  ifndef BULK_FLUXES
-          DO itrc=1,NT(ng)
-             stflx(i,j,itrc)=0.0_r8
-          END DO
-#  endif
-# endif
+#else
+            ! it seems to zero out the surface tracer fluxes when zice.eq.0
+            ! i.e. open ocean, i.e. no forcing comes through not sure why.
+            ! DO itrc=1,NT(ng)
+            !   stflx(i,j,itrc)=0.0_r8
+            ! END DO
+#endif
           END IF
         END DO
       END DO
@@ -653,13 +1006,13 @@
 ! Store old ice shelf thickness.
 !-----------------------------------------------------------------------
 !
-# if defined ICESHELF_MORPH
+#if defined ICESHELF_MORPH
       DO j=JstrR,JendR
         DO i=IstrR,IendR
           iceshelf_draft(i,j,nnew)=zice(i,j)+(m(i,j)*dt(ng))!           &
-!     &                             MIN(m(i,j)*dt(ng),1.0e-8_r8) 
+!     &                             MIN(m(i,j)*dt(ng),1.0e-8_r8)
           IF(i.eq.40.and.j.eq.40) THEN
-          write(6,*) m(i,j),zice(i,j),iceshelf_draft(i,j,nnew) 
+          write(6,*) m(i,j),zice(i,j),iceshelf_draft(i,j,nnew)
           ENDIF
         END DO
       END DO
@@ -669,7 +1022,7 @@
      &                            LBi, UBi, LBj, UBj,                   &
      &                            iceshelf_draft(:,:,nnew))
         END IF
-# endif
+#endif
 
 !
 !  Apply gradient or periodic boundary conditions for the two fluxes
@@ -680,7 +1033,7 @@
       CALL bc_r2d_tile (ng, tile,                                       &
      &                  LBi, UBi, LBj, UBj,                             &
      &                  stflx(:,:,isalt))
-#    ifdef DISTRIBUTE
+#ifdef DISTRIBUTE
       CALL mp_exchange2d (ng, tile, iNLM, 1,                            &
      &                    LBi, UBi, LBj, UBj,                           &
      &                    NghostPoints, EWperiodic(ng), NSperiodic(ng), &
@@ -689,8 +1042,8 @@
      &                    LBi, UBi, LBj, UBj,                           &
      &                    NghostPoints, EWperiodic(ng), NSperiodic(ng), &
      &                    stflx(:,:,isalt))
-#    endif
-#   ifdef SHORTWAVE
+#endif
+#ifdef SHORTWAVE
       DO j=JstrR,JENDR
         DO i=IstrR,IENDR
           IF (zice(i,j).ne.0.0_r8) THEN
@@ -698,19 +1051,19 @@
           END IF
         END DO
       END DO
-#   endif
+#endif
 
       RETURN
       END SUBROUTINE iceshelf_vbc_tile
 
-# ifdef ICESHELF_TEOS10
+#ifdef ICESHELF_TEOS10
       REAL FUNCTION ct_from_theta(s,theta)
 !   conservative temperature from potential temperature, as in
 !   Jackett, McDougall, Feistel, Wright and Griffies (2004), submitted
 !   JAOT
 !   s                : salinity                  (psu)
 !   theta            : potential temperature     (deg C, ITS-90)
-!   ct_from_theta    : conservative temperature  (deg C, ITS-90) 
+!   ct_from_theta    : conservative temperature  (deg C, ITS-90)
 !   calls            : penthalpy_F
 !   check value      : ct_from_theta(20,20) = 20.45274961282756
 !   DRJ on 10/12/03
@@ -759,7 +1112,7 @@
 !   ct               : conservative temperature  (deg C, ITS-90)
 !   theta_from_ct    : potential temperature     (deg C, ITS-90)
 !   calls            : cp0_F and ct_from_theta
-!   check value      : theta_from_ct(20,20) = 19.55627910604363 
+!   check value      : theta_from_ct(20,20) = 19.55627910604363
 !   DRJ on 03/06/05
 
       implicit real*8(a-h,o-z)
@@ -796,7 +1149,7 @@
       END FUNCTION theta_from_ct
 
       REAL FUNCTION theta_from_t(s,t,p,pr)
-!   potential temperature from in-situ temperature, as in 
+!   potential temperature from in-situ temperature, as in
 !   Jackett, McDougall, Feistel, Wright and Griffies (2004), submitted
 !   JAOT
 !   s                : salinity                           (psu)
@@ -852,7 +1205,7 @@
 !   t                : in-situ temperature                (deg C,
 !   ITS-90)
 !   th0              : potential temperature              (deg C,
-!   ITS-90) 
+!   ITS-90)
 !   p                : gauge pressure                     (dbar)
 !                      (absolute pressure - 10.1325 dbar)
 !   pr               : reference pressure                 (dbar)
@@ -1057,7 +1410,7 @@
 !   p                : gauge pressure                         (dbar)
 !                      (absolute pressure - 10.1325 dbar)
 !   sat              : string variable
-!                       'air-sat'  - air saturated water       
+!                       'air-sat'  - air saturated water
 !                       'air-free' - air free water
 !   fp_theta         : potential freezing temperature         (deg C,
 !   ITS-90)
@@ -1076,7 +1429,7 @@
      &                   sqrts *  3.0086338218235500d-04))  +           &
      &                        p*(-7.0023530029351803d-04    +           &
      &                        p*( 8.4149607219833806d-09    +           &
-     &                       s *  1.1845857563107403d-11));           
+     &                       s *  1.1845857563107403d-11));
       tf_den =                          1.0000000000000000d+00    +     &
      &                              p*(-3.8493266309172074d-05    +     &
      &                             p *  9.1686537446749641d-10)   +     &
@@ -1095,13 +1448,13 @@
       return
 
       END FUNCTION fp_theta
-# else
+#else
 ! *********************************************************************
       SUBROUTINE potit(Sal,theta,Pres,RPres,Temp,i,j)
 ! *********************************************************************
-! Calculates from the salinity (sal, psu), potential temperature 
-! (theta, degC) and reference pressure (pres, dbar) the in-situ 
-! temperaure (Temp_insitu, degC) related to the in-situ pressure 
+! Calculates from the salinity (sal, psu), potential temperature
+! (theta, degC) and reference pressure (pres, dbar) the in-situ
+! temperaure (Temp_insitu, degC) related to the in-situ pressure
 ! (rfpres, dbar) with the help of an iterative method.
       USE mod_kinds
 
@@ -1127,8 +1480,8 @@
       END SUBROUTINE potit
 ! *********************************************************************
       REAL FUNCTION thetaa(Sal,Temp,Pres,RPres)
-! Calculates from the salinity (sal, psu), the in-situ temperature 
-! (Temp, degC) and the in-situ pressure press, dbar) the potential 
+! Calculates from the salinity (sal, psu), the in-situ temperature
+! (Temp, degC) and the in-situ pressure press, dbar) the potential
 ! temperature (Theta, degC) converted to the reference pressure
 ! (RPres, dbar). A Runge-Kutta procedure of the fourth order is used.
 !
@@ -1170,7 +1523,7 @@
 ! *********************************************************************
       REAL FUNCTION dTemp(Sal,Temp,Pres)
 ! Calculates from the salinity (Sal,psu), the in-situ Temperature
-! (Temp, degC) and the in-situ pressure (Pres, dbar) the adiabatic 
+! (Temp, degC) and the in-situ pressure (Pres, dbar) the adiabatic
 ! temperature gradient (dTemp, K Dbar^-1).
 !
 ! Check values: dTemp  =     3.255976E-4 K dbar^-1
@@ -1198,7 +1551,7 @@
      &      + a0
       RETURN
       END FUNCTION dTemp
-# endif
+#endif
 
 #endif
       END MODULE iceshelf_vbc_mod
