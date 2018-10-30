@@ -641,7 +641,7 @@
 # else
 #  ifndef BULK_FLUXES
           DO itrc=1,NT(ng)
-             stflx(i,j,itrc)=0.0_r8
+!             stflx(i,j,itrc)=0.0_r8
           END DO
 #  endif
 # endif
